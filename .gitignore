@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+
+# The scrollcraft workspace: 40MB of verification screenshots, a nested
+# playwright install, and the build scratch folder. The page it produced is
+# committed as site/, which is the part that matters.
+scrollcraft/
+.scrollcraft.json
