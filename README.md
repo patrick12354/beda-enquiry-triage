@@ -268,3 +268,15 @@ In this order:
 
 All data in this repository is the supplied synthetic pack. No real BEDA records
 appear anywhere.
+
+---
+
+## A note on the history
+
+The first commit in this repository is my Test 1 submission, which was a design
+exercise against a different brief and a different reading of what BEDA does. It
+is left in place rather than squashed, because the parts that carried over — the
+sensor/actuator split, span grounding, the deterministic gate, the absent sender
+— are easier to judge if you can see what they looked like before this dataset
+existed, and what had to be thrown away. The taxonomy, the routing, the
+reconciliation and the identity resolution are all new here.
