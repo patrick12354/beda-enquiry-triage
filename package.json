@@ -1,18 +1,18 @@
 {
-  "name": "beda-enquiry-triage",
-  "version": "0.1.0",
+  "name": "beda-intake-triage",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Reference slice of the BEDA enquiry intake & triage system",
+  "description": "Intake, triage, reconciliation and human-approved response for BEDA",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "demo": "tsx src/demo.ts",
-    "web": "tsx src/server.ts"
+    "web": "tsx src/server.ts",
+    "start": "tsx src/server.ts"
   },
   "dependencies": {
-    "playwright-core": "^1.62.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

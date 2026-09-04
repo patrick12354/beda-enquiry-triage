@@ -1,0 +1,26 @@
+[
+  {
+    "id": "matt",
+    "name": "Matt Cooper",
+    "role": "Founder",
+    "owns": "Major commercial opportunities and strategic partnerships."
+  },
+  {
+    "id": "ties",
+    "name": "Ties Rahardjo",
+    "role": "Executive Operations Coordinator",
+    "owns": "Scheduling, administration, logistics and general operational enquiries."
+  },
+  {
+    "id": "zidane",
+    "name": "Zidane Mouldino",
+    "role": "Marketing and Growth Coordinator",
+    "owns": "Marketing, website and inbound growth enquiries."
+  },
+  {
+    "id": "ali",
+    "name": "Ali Pratama",
+    "role": "Senior Business Analyst",
+    "owns": "CRM, systems, data, workflows and infrastructure issues."
+  }
+]

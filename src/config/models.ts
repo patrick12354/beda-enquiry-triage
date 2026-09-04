@@ -19,7 +19,7 @@ export interface ModelSpec {
 }
 
 export const MODELS = {
-  /** Tier 1. Triage every enquiry that survives the pre-filter. */
+  /** Tier 1. Triage every item that survives the pre-filter. */
   triage: {
     id: "deepseek/deepseek-v4-flash-0731",
     inputPerMTok: 0.065,
@@ -31,12 +31,14 @@ export const MODELS = {
     id: "deepseek/deepseek-v4-flash-0731",
     inputPerMTok: 0.065,
     outputPerMTok: 0.18,
-    note: "Same model, stricter schema. Escalates when the grounding check fails.",
+    note: "Same model, stricter schema. Every field it returns is span-verified downstream.",
   },
   /**
-   * Tier 3. Used when tier 1/2 is uncertain, or when the enquiry looks like
-   * real client demand. Better instruction-following is worth ~17x on the ~10%
-   * of traffic that actually carries revenue.
+   * Tier 3. Used when tier 1 was not confident, and always for the two
+   * categories where being wrong costs money directly: a sales enquiry that
+   * gets mis-sized, and a billing dispute that gets mis-read. Better
+   * instruction-following is worth ~17x on the fraction of traffic that
+   * actually carries revenue.
    */
   escalated: {
     id: "deepseek/deepseek-v4-pro-0813",
@@ -45,15 +47,19 @@ export const MODELS = {
     note: "Stronger reasoning for the enquiries where being wrong costs money.",
   },
   /**
-   * Tier 4. Drafting replies in BEDA's voice. Brand tone is the product here
-   * ("The Power of Good Advice"), and every draft is read by a human before it
-   * goes anywhere, so this is a small, bounded spend.
+   * Tier 4. Drafting replies in BEDA's voice.
+   *
+   * NOT USED in this build. Drafts are composed from templates in
+   * pipeline/draft.ts, because a template cannot state a number that the
+   * grounding check rejected and a model can. The tier is configured because
+   * tone on the long tail is the one place a model would genuinely improve the
+   * output, and it would sit behind the same approval gate. See README.
    */
   draft: {
     id: "deepseek/deepseek-v4-pro-0813",
     inputPerMTok: 1.1154,
     outputPerMTok: 3.3462,
-    note: "Voice matters more than cost; volume is capped by the approval queue.",
+    note: "Configured, not wired. Volume would be capped by the approval queue.",
   },
 } as const satisfies Record<string, ModelSpec>;
 

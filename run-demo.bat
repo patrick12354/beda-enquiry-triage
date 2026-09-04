@@ -1,11 +1,11 @@
 @echo off
 setlocal
-title The Gate - BEDA enquiry triage
+title BEDA - intake, triage and response
 cd /d "%~dp0"
 
 echo.
-echo   The Gate - BEDA enquiry triage
-echo   ------------------------------
+echo   BEDA - intake, triage and response
+echo   ----------------------------------
 echo.
 
 where node >nul 2>nul
@@ -32,9 +32,10 @@ if not exist "node_modules\" (
 
 echo   Opening http://localhost:5173 in your browser...
 echo.
-echo     /        the design document, six chapters
-echo     /demo    the running pipeline, click through it
+echo     /          the story - what was built and why
+echo     /inspect   the tool - every item, its evidence, the approval queue
 echo.
+echo   No API key is needed. Nothing is sent anywhere.
 echo   Close this window to stop the server.
 echo.
 

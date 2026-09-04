@@ -1,426 +1,401 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BEDA enquiry triage — local demo</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BEDA — inspector</title>
 <style>
-:root{
-  --bg:#E6E7E3; --surface:#F2F3EF; --surface-2:#DBDDD6; --ink:#16181A; --muted:#5B6058;
-  --rule:#C3C6BC; --rule-2:#A9AEA2;
-  --det:#1F4D3D; --det-soft:#DCE7E0; --model:#8A5A2B; --model-soft:#F0E3D2;
-  --stop:#A8321E; --stop-soft:#F3DED9;
-  --shadow:0 1px 2px rgba(22,26,22,.06),0 8px 24px -12px rgba(22,26,22,.18);
-  --ease-out:cubic-bezier(.23,1,.32,1);
-  /* Single theme on purpose: the document this sits beside is printed paper,
-     and the two surfaces have to be the same place. */
-  color-scheme:light;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);
-  font-family:"Newsreader",Georgia,serif;font-size:15px;line-height:1.55;
-  -webkit-font-smoothing:antialiased}
-.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+  :root {
+    --bg: #0f1115; --panel: #161a21; --panel2: #1c212a; --line: #262d38;
+    --ink: #e6e9ef; --dim: #97a1b0; --faint: #6b7482;
+    --accent: #6ea8fe; --good: #5ec98b; --warn: #e3b341; --bad: #f0736a;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  a { color: var(--accent); }
+  header {
+    position: sticky; top: 0; z-index: 10; background: #0f1115ee;
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+    padding: 10px 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  .badge {
+    font: 11px/1 var(--mono); padding: 4px 7px; border-radius: 4px;
+    background: var(--panel2); color: var(--dim); border: 1px solid var(--line);
+  }
+  .badge.good { color: var(--good); border-color: #2b5f45; }
+  .badge.warn { color: var(--warn); border-color: #5f5326; }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav button {
+    background: transparent; border: 1px solid transparent; color: var(--dim);
+    padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 13px;
+  }
+  nav button:hover { color: var(--ink); }
+  nav button[aria-selected="true"] { background: var(--panel2); color: var(--ink); border-color: var(--line); }
 
-.head{display:flex;align-items:center;justify-content:space-between;gap:1rem;
-  padding:.55rem clamp(1rem,3vw,2rem);background:#E6E7E3;border-bottom:1px solid #C3C6BC;
-  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.68rem;
-  letter-spacing:.11em;text-transform:uppercase}
-.head__mark{color:#16181A;font-weight:600;margin:0}
-.head__mark span{color:#5B6058;font-weight:400;margin-left:.7rem;letter-spacing:.09em}
-@media (max-width:700px){.head__mark span{display:none}}
-.head__nav{display:flex;gap:.2rem;align-items:center}
-.head__nav a{color:#5B6058;text-decoration:none;padding:.35rem .7rem;
-  border:1px solid transparent;transition:color 140ms var(--ease-out),border-color 140ms var(--ease-out)}
-.head__nav a:hover{color:#16181A;border-color:#C3C6BC}
-.head__nav a[aria-current]{color:#A8321E;border-color:#A8321E}
-.head__nav a:focus-visible{outline:2px solid #A8321E;outline-offset:2px}
-#mode{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;
-  padding:3px 9px;background:var(--model-soft);color:var(--model);font-weight:600;
-  letter-spacing:.09em}
-#mode.live{background:var(--det-soft);color:var(--det)}
-@media (max-width:820px){#mode{display:none}}
+  main { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 49px); }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } aside { border-right: none !important; } }
+  aside { border-right: 1px solid var(--line); overflow-y: auto; }
+  section.pane { padding: 20px 24px 80px; overflow-y: auto; }
 
-.app{display:grid;grid-template-columns:1fr;gap:0}
-@media(min-width:1080px){.app{grid-template-columns:400px minmax(0,1fr);height:calc(100vh - 41px)}}
-.pane{padding:22px 26px;overflow-y:auto}
-.pane.left{border-right:1px solid var(--rule);background:var(--surface)}
+  .row {
+    padding: 10px 14px; border-bottom: 1px solid var(--line); cursor: pointer;
+    display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: start;
+  }
+  .row:hover { background: var(--panel); }
+  .row[aria-current="true"] { background: var(--panel2); box-shadow: inset 3px 0 0 var(--accent); }
+  .row code { font: 12px var(--mono); color: var(--faint); }
+  .row .subj { font-size: 13px; }
+  .row .meta { font-size: 11px; color: var(--faint); margin-top: 2px; }
 
-h2{font-family:"Archivo",system-ui,sans-serif;font-size:.72rem;font-weight:700;
-  letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
-h2:not(:first-child){margin-top:26px}
+  .pill { display: inline-block; font: 11px/1.6 var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel2); color: var(--dim); }
+  .pill.file_and_notify { color: var(--good); border-color: #2b5f45; }
+  .pill.request_missing_info { color: var(--accent); border-color: #2c4a76; }
+  .pill.escalate_to_human { color: var(--warn); border-color: #5f5326; }
+  .pill.log_no_reply { color: var(--dim); }
+  .pill.quarantine { color: var(--bad); border-color: #6b3430; }
 
-.fixtures{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
-.fx{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;padding:4px 8px;
-  border:1px solid var(--rule);background:var(--bg);color:var(--muted);border-radius:3px;
-  cursor:pointer;transition:.12s}
-.fx:hover{border-color:var(--det);color:var(--det)}
-.hint{font-size:12.5px;color:var(--muted);margin:0 0 14px}
-
-label{display:block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;
-  letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:12px 0 4px}
-input,select,textarea{width:100%;font-family:"IBM Plex Mono",ui-monospace,monospace;
-  font-size:12.5px;padding:7px 9px;border:1px solid var(--rule);border-radius:3px;
-  background:var(--bg);color:var(--ink)}
-textarea{resize:vertical;line-height:1.5;font-family:"Newsreader",Georgia,serif;font-size:14px}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
-.check{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12.5px;color:var(--muted)}
-.check input{width:auto}
-
-.actions{display:flex;gap:8px;margin-top:18px;position:sticky;bottom:0;
-  padding-top:12px;background:linear-gradient(transparent,var(--surface) 30%)}
-button.go{flex:1;font-family:"Archivo",system-ui,sans-serif;font-weight:700;
-  font-size:14px;padding:11px;border:0;border-radius:4px;background:var(--det);
-  color:var(--surface);cursor:pointer}
-button.go:disabled{opacity:.5;cursor:wait}
-button.ghost{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;padding:11px 13px;
-  border:1px solid var(--rule);border-radius:4px;background:transparent;color:var(--muted);cursor:pointer}
-button.ghost:hover{border-color:var(--stop);color:var(--stop)}
-
-/* pipeline ladder */
-.pipe{border:1px solid var(--rule);border-radius:5px;overflow:hidden;background:var(--surface);
-  box-shadow:var(--shadow);margin-bottom:24px}
-.stage{display:grid;grid-template-columns:4px 108px minmax(0,1fr) auto;gap:0 14px;
-  align-items:center;padding:9px 16px 9px 0;border-bottom:1px solid var(--rule);opacity:.34;
-  transition:opacity .25s}
-.stage:last-child{border-bottom:0}
-.stage.on{opacity:1}
-.stage .bar{align-self:stretch;background:var(--rule)}
-.stage.d.on .bar{background:var(--det)} .stage.m.on .bar{background:var(--model)}
-.stage.s.on .bar{background:var(--stop)}
-.stage.d.on{background:color-mix(in oklab,var(--det-soft) 34%,transparent)}
-.stage.m.on{background:color-mix(in oklab,var(--model-soft) 34%,transparent)}
-.stage.s.on{background:color-mix(in oklab,var(--stop-soft) 48%,transparent)}
-.stage .nm{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;font-weight:600;
-  padding-left:14px}
-.stage.d.on .nm{color:var(--det)} .stage.m.on .nm{color:var(--model)} .stage.s.on .nm{color:var(--stop)}
-.stage .dt{font-size:12.5px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
-.stage .tick{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;color:var(--muted);
-  padding-right:2px;white-space:nowrap}
-
-.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin:0 0 12px}
-.chip{display:inline-flex;align-items:center;gap:5px;font-family:"IBM Plex Mono",ui-monospace,monospace;
-  font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:3px}
-.chip.det{background:var(--det-soft);color:var(--det)}
-.chip.model{background:var(--model-soft);color:var(--model)}
-.chip.stop{background:var(--stop-soft);color:var(--stop)}
-
-/* verdict */
-.verdict{border:1px solid var(--rule);border-radius:5px;background:var(--surface);
-  padding:20px 22px;margin-bottom:22px;box-shadow:var(--shadow)}
-.verdict.a-file_and_notify{border-left:3px solid var(--det)}
-.verdict.a-request_missing_info{border-left:3px solid var(--model)}
-.verdict.a-escalate_to_human{border-left:3px solid var(--stop)}
-.verdict.a-quarantine{border-left:3px solid var(--muted)}
-.verdict .act{font-family:"Archivo",system-ui,sans-serif;font-size:1.5rem;
-  font-weight:700;letter-spacing:-.02em;margin:0 0 4px;line-height:1.15}
-.verdict .sum{color:var(--muted);font-size:13.5px;margin:0 0 16px}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:13px;margin-bottom:14px}
-.kv dt{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.08em;
-  text-transform:uppercase;color:var(--muted);padding-top:3px}
-.kv dd{margin:0;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px}
-.reasons{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
-.reasons li{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;color:var(--muted);
-  padding-left:14px;position:relative;overflow-wrap:anywhere}
-.reasons li::before{content:"·";position:absolute;left:3px;color:var(--det)}
-
-.grid2{display:grid;grid-template-columns:1fr;gap:16px}
-@media(min-width:820px){.grid2{grid-template-columns:1fr 1fr}}
-.card{border:1px solid var(--rule);border-radius:5px;background:var(--surface);padding:16px 18px}
-.card h3{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:600}
-.card.stop{border-color:var(--stop)}
-.card.stop h3{color:var(--stop)}
-.empty{font-size:12.5px;color:var(--muted);font-style:italic}
-.item{border-top:1px solid var(--rule);padding:10px 0;font-size:13px}
-.item:first-of-type{border-top:0;padding-top:0}
-.item b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;font-weight:600}
-.draft{background:var(--bg);border:1px solid var(--rule);border-radius:3px;padding:10px 12px;
-  margin-top:7px;font-size:13px;white-space:pre-wrap}
-.sent{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;color:var(--stop);
-  margin-top:8px;font-weight:600;letter-spacing:.05em}
-
-.placeholder{border:1px dashed var(--rule);border-radius:5px;padding:44px 26px;text-align:center;
-  color:var(--muted);font-size:13.5px}
-:focus-visible{outline:2px solid var(--det);outline-offset:2px}
-@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--faint); margin: 26px 0 8px; font-weight: 600; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; }
+  .src { white-space: pre-wrap; font: 12.5px/1.65 var(--mono); color: var(--dim); }
+  .grid { display: grid; grid-template-columns: 170px 1fr; gap: 4px 14px; font-size: 13px; }
+  .grid dt { color: var(--faint); }
+  .grid dd { margin: 0; }
+  .span { color: var(--faint); font: 11.5px var(--mono); }
+  .origin { font: 10.5px var(--mono); color: var(--accent); }
+  ul.reasons { list-style: none; padding: 0; margin: 0; }
+  ul.reasons li { font: 12px/1.9 var(--mono); color: var(--dim); }
+  ul.reasons li::before { content: "· "; color: var(--faint); }
+  ul.reasons li.warn { color: var(--warn); }
+  ul.reasons li.warn::before { content: "! "; }
+  .draft { white-space: pre-wrap; font: 13px/1.7 ui-sans-serif, system-ui, sans-serif; background: var(--panel2); border-radius: 6px; padding: 14px; border: 1px solid var(--line); }
+  button.act { background: var(--panel2); border: 1px solid var(--line); color: var(--ink); padding: 7px 13px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  button.act:hover { border-color: var(--accent); }
+  button.act.primary { border-color: #2b5f45; color: var(--good); }
+  button.act.danger { border-color: #6b3430; color: var(--bad); }
+  input.name { background: var(--bg); border: 1px solid var(--line); color: var(--ink); padding: 7px 10px; border-radius: 6px; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--faint); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+  td.mono, th.mono { font-family: var(--mono); }
+  .note { color: var(--dim); font-size: 13px; }
+  .banner { border-left: 3px solid var(--warn); background: #1e1a10; padding: 10px 14px; border-radius: 0 6px 6px 0; margin-bottom: 10px; font-size: 13px; color: #f0dfae; }
+  .banner.good { border-color: var(--good); background: #101c15; color: #bfe6cf; }
+  .scroll-x { overflow-x: auto; }
 </style>
 </head>
 <body>
-
-<header class="head">
-  <p class="head__mark">The gate<span>Enquiry triage for We Are BEDA</span></p>
-  <div class="head__nav">
-    <span id="mode" class="mono">…</span>
-    <a href="/">Document</a>
-    <a href="/demo" aria-current="page">Try the demo</a>
-  </div>
+<header>
+  <h1>BEDA — intake, triage and response</h1>
+  <span class="badge" id="mode">loading…</span>
+  <span class="badge good" id="sent">0 sent</span>
+  <span class="badge" id="chain">chain —</span>
+  <nav id="tabs">
+    <button data-tab="items" aria-selected="true">Items</button>
+    <button data-tab="identity">Identity</button>
+    <button data-tab="approvals">Approvals</button>
+    <button data-tab="audit">Audit</button>
+    <button data-tab="data">Source data</button>
+  </nav>
+  <a href="/" style="font-size:13px">← the story</a>
 </header>
 
-<div class="app">
-
-  <div class="pane left">
-    <h2>Load an example</h2>
-    <div class="fixtures" id="fixtures"></div>
-    <p class="hint">Or write your own below. Submitting the same enquiry twice shows deduplication.</p>
-
-    <h2>Enquiry</h2>
-    <label for="channel">Channel</label>
-    <select id="channel">
-      <option value="email">email</option>
-      <option value="wix_form">wix_form — the public site form</option>
-      <option value="whatsapp">whatsapp</option>
-      <option value="instagram_dm">instagram_dm</option>
-      <option value="linkedin">linkedin</option>
-    </select>
-
-    <div class="row">
-      <div><label for="fromName">From name</label><input id="fromName" class="mono"></div>
-      <div><label for="fromEmail">From email</label><input id="fromEmail" class="mono"></div>
-    </div>
-    <div class="row">
-      <div><label for="fromPhone">From phone</label><input id="fromPhone" class="mono"></div>
-      <div><label for="subject">Subject</label><input id="subject" class="mono"></div>
-    </div>
-
-    <label for="body">Body</label>
-    <textarea id="body" rows="9"></textarea>
-
-    <label for="formFields">Form fields <span style="text-transform:none;letter-spacing:0">— one <code>Key: value</code> per line</span></label>
-    <textarea id="formFields" class="mono" rows="4" style="font-family:'IBM Plex Mono',monospace;font-size:12.5px"></textarea>
-
-    <div class="check">
-      <input type="checkbox" id="honeypot">
-      <label for="honeypot" style="margin:0;text-transform:none;letter-spacing:0;font-size:12.5px;font-family:'Newsreader',serif">Honeypot field was filled (bot signal)</label>
-    </div>
-
-    <div class="actions">
-      <button class="go" id="run">Process enquiry</button>
-      <button class="ghost" id="reset" title="Clear the CRM, approval queue and audit log">Reset</button>
-    </div>
-  </div>
-
-  <div class="pane right">
-    <h2>Pipeline</h2>
-    <p class="legend">
-      <span class="chip det">deterministic code</span>
-      <span class="chip model">model</span>
-      <span class="chip stop">human boundary</span>
-    </p>
-
-    <div class="pipe" id="pipe"></div>
-
-    <div id="verdict"><div class="placeholder">Load an example or write an enquiry, then press <b>Process enquiry</b>.</div></div>
-
-    <div class="grid2">
-      <div class="card"><h3>CRM state</h3><div id="crm"></div></div>
-      <div class="card stop"><h3>Approval queue — nothing leaves without a human</h3><div id="queue"></div></div>
-    </div>
-  </div>
-
-</div>
+<main>
+  <aside id="list"></aside>
+  <section class="pane" id="pane"><p class="note">Loading…</p></section>
+</main>
 
 <script>
-const STAGES = [
-  { id:"adapters",  kind:"d", label:"adapters",  desc:"normalise to one RawEnquiry" },
-  { id:"queue",     kind:"d", label:"queue",     desc:"idempotent on provider message id" },
-  { id:"prefilter", kind:"d", label:"prefilter", desc:"honeypot · blocklist · link flood" },
-  { id:"classify",  kind:"m", label:"classify",  desc:"intent + confidence + evidence" },
-  { id:"extract",   kind:"m", label:"extract",   desc:"fields, each with a source span" },
-  { id:"grounding", kind:"d", label:"grounding", desc:"discard any span not in the source" },
-  { id:"identity",  kind:"d", label:"identity",  desc:"message id → email/phone → fuzzy" },
-  { id:"gate",      kind:"d", label:"the gate",  desc:"the only place an action is chosen" },
-  { id:"crm",       kind:"d", label:"crm write", desc:"idempotency key on every write" },
-  { id:"draft",     kind:"m", label:"draft",     desc:"reply in BEDA's voice" },
-  { id:"approval",  kind:"s", label:"approval",  desc:"a named human reads, edits, approves" },
-];
+let S = null;            // server state
+let tab = "items";
+let selected = null;
 
-const ACTION_COPY = {
-  file_and_notify:      ["File and notify",     "Complete and confident. Record written, owner pinged, reply drafted for approval."],
-  request_missing_info: ["Request missing info","Not enough to act on. A question is drafted asking only for the named gaps."],
-  escalate_to_human:    ["Escalate to human",   "The system declined to decide. A person picks this up."],
-  quarantine:           ["Quarantine",          "Junk. No record is written, but the decision is retained and reversible."],
-};
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const el = (id) => document.getElementById(id);
 
-let fixtures = [];
-const $ = (id) => document.getElementById(id);
+async function load(path, body) {
+  const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  const data = await res.json();
+  if (!res.ok) { alert(data.error ?? "Request failed"); return; }
+  S = data;
+  if (!selected) selected = S.items[0]?.id ?? null;
+  render();
+}
 
-function renderPipe(lit = new Set(), notes = {}) {
-  $("pipe").innerHTML = STAGES.map(s => `
-    <div class="stage ${s.kind} ${lit.has(s.id) ? "on" : ""}">
-      <span class="bar"></span>
-      <span class="nm">${s.label}</span>
-      <span class="dt">${notes[s.id] ? esc(notes[s.id]) : s.desc}</span>
-      <span class="tick">${lit.has(s.id) ? "ran" : "—"}</span>
+function render() {
+  el("mode").textContent = S.modeLabel;
+  el("sent").textContent = S.stats.draftsSent + " sent";
+  el("chain").textContent = S.auditVerified.ok ? "audit chain intact" : "AUDIT CHAIN BROKEN at #" + S.auditVerified.brokenAtSeq;
+  el("chain").className = "badge " + (S.auditVerified.ok ? "good" : "warn");
+  renderList();
+  ({ items: renderItem, identity: renderIdentity, approvals: renderApprovals, audit: renderAudit, data: renderData }[tab])();
+}
+
+function renderList() {
+  const aside = el("list");
+  if (tab !== "items") { aside.style.display = "none"; document.querySelector("main").style.gridTemplateColumns = "1fr"; return; }
+  aside.style.display = "";
+  document.querySelector("main").style.gridTemplateColumns = window.innerWidth > 860 ? "300px 1fr" : "1fr";
+  aside.innerHTML = S.items.map((i) => `
+    <div class="row" data-id="${i.id}" aria-current="${i.id === selected}">
+      <code>${i.id}</code>
+      <div>
+        <div class="subj">${esc(i.subject)}</div>
+        <div class="meta">${esc(i.from ?? "—")}</div>
+        <div style="margin-top:5px"><span class="pill ${i.decision.action}">${i.decision.action}</span>
+        <span class="pill">${esc(S.intentLabels[i.decision.intent])}</span></div>
+      </div>
     </div>`).join("");
+  aside.querySelectorAll(".row").forEach((r) => r.onclick = () => { selected = r.dataset.id; render(); });
 }
 
-function esc(s) {
-  return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+function fieldRows(i) {
+  const keys = Object.keys(i.extraction);
+  if (!keys.length) return `<p class="note">Nothing was extracted. For a quarantined item that is correct — it never reached a model.</p>`;
+  return `<dl class="grid">` + keys.map((k) => {
+    const f = i.extraction[k];
+    return `<dt>${esc(k)}${i.approximate.includes(k) ? ' <span class="badge warn" style="padding:1px 4px">approx</span>' : ""}</dt>
+      <dd>${esc(f.value)}
+        <div class="span">read from “${esc(f.sourceSpan)}” <span class="origin">${esc(f.origin)}</span></div>
+      </dd>`;
+  }).join("") + `</dl>`;
 }
 
-function litFrom(trace, outcome) {
-  const seen = new Set(trace.map(t => t.stage));
-  const lit = new Set(["adapters", "queue"]);
-  const notes = {};
+function renderItem() {
+  const i = S.items.find((x) => x.id === selected);
+  const pane = el("pane");
+  if (!i) { pane.innerHTML = "<p class='note'>Select an item.</p>"; return; }
+  const d = i.decision;
 
-  lit.add("prefilter");
-  if (seen.has("prefilter")) {
-    const e = trace.find(t => t.stage === "prefilter");
-    notes.prefilter = "dropped: " + e.detail.reasons + " — no tokens spent";
-    return { lit, notes };            // pipeline stopped here
-  }
-  if (seen.has("dedupe")) {
-    lit.add("identity");
-    notes.identity = "replay of a message already processed — skipped";
-    return { lit, notes };
-  }
+  pane.innerHTML = `
+    <h2>${i.id} · ${esc(i.subject)}</h2>
+    <p class="note">${esc(i.fromName ? i.fromName + " <" + i.from + ">" : i.from ?? "unknown sender")}</p>
 
-  const inf = trace.find(t => t.stage === "inference");
-  if (inf) {
-    lit.add("classify");
-    if (inf.actor === "system") {
-      notes.classify = "every model failed — degraded to human triage";
-    } else {
-      lit.add("extract");
-      notes.classify = `${inf.detail.intent} @ ${inf.detail.confidence} confidence`;
-      notes.extract = inf.detail.escalatedTier ? "escalated tier (pro)" : "flash tier";
-    }
-  }
+    <h3>What the system decided</h3>
+    <div class="card">
+      <div style="margin-bottom:10px">
+        <span class="pill ${d.action}">${d.action}</span>
+        <span class="pill">${esc(S.intentLabels[d.intent])}</span>
+        <span class="pill">→ ${esc(d.ownerName)}</span>
+        <span class="pill">SLA ${d.slaHours}h</span>
+        ${d.consult.length ? `<span class="pill">consult ${d.consult.map((c) => esc(S.staff[c] ? S.staff[c].name : c)).join(", ")}</span>` : ""}
+      </div>
+      <p class="note" style="margin:0 0 10px">${esc(d.justification)}</p>
+      <ul class="reasons">
+        ${d.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}
+        ${d.warnings.map((w) => `<li class="warn">${esc(w)}</li>`).join("")}
+      </ul>
+      ${i.qualification ? `<p class="note" style="margin:10px 0 0"><strong>Qualification — ${i.qualification.band}.</strong> ${esc(i.qualification.basis)}</p>` : ""}
+    </div>
 
-  const gr = trace.find(t => t.stage === "grounding");
-  lit.add("grounding");
-  notes.grounding = gr ? gr.summary + ": " + gr.detail.fields : "every span verified against the source";
+    ${i.injectionFlags.length ? `<div class="banner">Instruction-like text was found inside this item and was NOT acted on: ${i.injectionFlags.map(esc).join(" · ")}</div>` : ""}
 
-  lit.add("identity");
-  lit.add("gate");
-  notes.gate = outcome.decision.action + " → " + outcome.decision.owner;
+    <h3>The item, as the model saw it</h3>
+    <div class="card"><div class="src">${esc(i.body)}</div></div>
+    ${i.attachments.map((a) => `
+      <div class="card">
+        <div class="origin" style="margin-bottom:6px">attachment: ${esc(a.filename)}${a.resolved ? "" : " — REFERENCED BUT NOT SUPPLIED"}</div>
+        <div class="src">${esc(a.text)}</div>
+      </div>`).join("")}
 
-  if (seen.has("crm_write")) { lit.add("crm"); notes.crm = trace.find(t=>t.stage==="crm_write").summary; }
-  if (seen.has("draft_queued")) {
-    lit.add("draft"); lit.add("approval");
-    notes.draft = "drafted, not sent";
-    notes.approval = "waiting for a person";
-  }
-  return { lit, notes };
+    <h3>Classification</h3>
+    <div class="card">
+      ${i.classification ? `
+        <dl class="grid">
+          <dt>category</dt><dd>${esc(S.intentLabels[i.classification.intent])}</dd>
+          <dt>confidence</dt><dd>${i.classification.confidence.toFixed(2)}</dd>
+          <dt>rationale</dt><dd>${esc(i.classification.rationale)}</dd>
+          <dt>evidence</dt><dd class="span">“${esc(i.classification.evidence)}”</dd>
+        </dl>` : `<p class="note">No model ran. The item was stopped by the deterministic pre-filter, which is the cheapest and safest place to stop it.</p>`}
+    </div>
+
+    <h3>Extracted, with the span each value was read from</h3>
+    <div class="card">${fieldRows(i)}</div>
+    ${i.droppedFields.length ? `<div class="banner">Grounding discarded ${i.droppedFields.length} field(s): ${i.droppedFields.map((f) => esc(f.field) + " (" + esc(f.reason) + ")").join(", ")}. A value the model could not evidence never reaches a decision.</div>` : ""}
+
+    ${i.reconciliations.length ? `<h3>Document checks — arithmetic, not inference</h3>` + i.reconciliations.map((r) => `
+      <div class="card">
+        <div><span class="pill ${r.verdict === "agrees" ? "file_and_notify" : r.verdict === "contradicts" ? "quarantine" : "escalate_to_human"}">${r.kind} → ${r.verdict}</span></div>
+        <p class="note" style="margin:9px 0 10px">${esc(r.note)}</p>
+        <dl class="grid">${Object.entries(r.inputs).map(([k, v]) => `<dt>${esc(k)}</dt><dd class="span">${esc(v)}</dd>`).join("")}</dl>
+      </div>`).join("") : ""}
+
+    ${i.crmMatches.length ? `<h3>CRM matching</h3><div class="card"><table><thead><tr><th>row</th><th>company</th><th>score</th><th>signals</th></tr></thead><tbody>
+      ${i.crmMatches.map((m) => `<tr><td class="mono">${esc(m.crmId)}</td><td>${esc(m.company)}</td><td class="mono">${m.score.toFixed(2)}</td><td class="span">${m.signals.map(esc).join(", ")}</td></tr>`).join("")}
+    </tbody></table></div>` : ""}
+
+    ${i.conflicts.length ? `<h3>Conflicting values</h3>` + i.conflicts.map((c) => `
+      <div class="card">
+        <div><strong>${esc(c.field)}</strong> ${c.autoResolved ? `<span class="pill file_and_notify">resolved → ${esc(c.resolvedTo)}</span>` : `<span class="pill escalate_to_human">held for a human</span>`}</div>
+        <table style="margin-top:8px"><tbody>${c.values.map((v) => `<tr><td class="mono">${esc(v.fromItem)}</td><td>${esc(v.value)}</td><td class="span">“${esc(v.span)}”</td></tr>`).join("")}</tbody></table>
+        <p class="note" style="margin:10px 0 0">${esc(c.basis)}</p>
+      </div>`).join("") : ""}
+
+    <h3>Response</h3>
+    ${renderDraftCard(i)}
+
+    <h3>Audit trail for ${i.id}</h3>
+    <div class="card scroll-x"><table><thead><tr><th>#</th><th>stage</th><th>actor</th><th>what happened</th></tr></thead><tbody>
+      ${i.trace.map((t) => `<tr><td class="mono">${t.seq}</td><td class="mono">${esc(t.stage)}</td><td class="mono">${esc(t.actor)}</td><td>${esc(t.summary)}</td></tr>`).join("")}
+    </tbody></table></div>`;
+
+  wireApproval(pane);
 }
 
-function renderVerdict(outcome) {
-  const d = outcome.decision;
-  const [title, sub] = ACTION_COPY[d.action] ?? [d.action, ""];
-  $("verdict").innerHTML = `
-    <div class="verdict a-${d.action}">
-      <p class="act">${esc(title)}</p>
-      <p class="sum">${esc(sub)}</p>
-      <dl class="kv">
-        <dt>Intent</dt><dd>${esc(d.intent)}</dd>
-        <dt>Destination</dt><dd>${esc(d.destination)}</dd>
-        <dt>Owner</dt><dd>${esc(d.owner)}</dd>
-        <dt>SLA</dt><dd>${d.slaMinutes} min to first human response</dd>
-        ${d.missingFields.length ? `<dt>Missing</dt><dd>${esc(d.missingFields.join(", "))}</dd>` : ""}
-        <dt>Approval</dt><dd>required — always</dd>
-      </dl>
-      <ul class="reasons">${d.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+function renderDraftCard(i) {
+  if (!i.draftId) {
+    return `<div class="card"><p class="note">No reply drafted. Policy for this category is <strong>${esc(S.routing[i.decision.intent].responsePolicy)}</strong>${i.decision.action === "log_no_reply" ? ", and this item was absorbed into an existing thread rather than answered again" : ""}.</p></div>`;
+  }
+  const d = S.approvals.find((a) => a.draftId === i.draftId);
+  if (!d) return "";
+  return `
+    <div class="card">
+      <div style="margin-bottom:10px">
+        <span class="pill">${esc(d.draftId)}</span>
+        <span class="pill ${d.status === "approved" ? "file_and_notify" : d.status === "rejected" ? "quarantine" : "escalate_to_human"}">${esc(d.status)}</span>
+        <span class="pill">to ${esc(d.to)}</span>
+      </div>
+      <div class="draft"><strong>${esc(d.subject)}</strong>\n\n${esc(d.body)}</div>
+      ${d.basis.length ? `<h3 style="margin-top:16px">Why the reviewer should trust this draft</h3><ul class="reasons">${d.basis.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
+      ${d.status === "awaiting_approval" ? `
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input class="name" data-approver placeholder="your name — approvals must be attributable" size="38" />
+          <button class="act primary" data-approve="${esc(d.draftId)}">Approve</button>
+          <button class="act danger" data-reject="${esc(d.draftId)}">Reject</button>
+        </div>
+        <p class="note" style="margin:10px 0 0">Approving records a named decision. It does not send: this build contains no outbound transport, so the counter in the header stays at zero by construction.</p>`
+        : `<p class="note" style="margin:12px 0 0">${esc(d.status)} by <strong>${esc(d.decidedBy)}</strong>${d.decidedNote ? " — " + esc(d.decidedNote) : ""}. Still not sent; there is nothing to send it with.</p>`}
     </div>`;
 }
 
-function renderState(s) {
-  const c = s.crm;
-  $("crm").innerHTML =
-    (!c.contacts.length && !c.deals.length)
-      ? `<p class="empty">Nothing written yet.</p>`
-      : `<div class="item"><b>${c.contacts.length}</b> contact${c.contacts.length===1?"":"s"} · <b>${c.deals.length}</b> deal${c.deals.length===1?"":"s"} · <b>${c.notes}</b> note${c.notes===1?"":"s"}</div>`
-        + c.contacts.map(x => `<div class="item"><b>${esc(x.id)}</b> ${esc(x.name ?? "—")} · ${esc(x.email ?? "no email")}</div>`).join("")
-        + c.deals.map(x => `<div class="item"><b>${esc(x.id)}</b> ${esc(x.title)} · <i>${esc(x.stage)}</i></div>`).join("");
-
-  $("queue").innerHTML = s.approvals.length
-    ? s.approvals.map(a => `
-        <div class="item">
-          <b>${esc(a.draftId)}</b> → ${esc(a.to)}
-          <div class="draft">${esc(a.draftBody)}</div>
-        </div>`).join("") + `<p class="sent">0 sent — the pipeline holds no reference to a sender</p>`
-    : `<p class="empty">No drafts yet.</p><p class="sent">0 sent — and there is no code path that could</p>`;
-}
-
-function parseFields(text) {
-  const out = {};
-  for (const line of text.split("\n")) {
-    const i = line.indexOf(":");
-    if (i > 0) out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-  }
-  return out;
-}
-
-function loadFixture(f) {
-  const e = f.enquiry;
-  $("channel").value = e.channel;
-  $("fromName").value = e.fromName ?? "";
-  $("fromEmail").value = e.fromEmail ?? "";
-  $("fromPhone").value = e.fromPhone ?? "";
-  $("subject").value = e.subject ?? "";
-  $("body").value = e.body ?? "";
-  $("formFields").value = Object.entries(e.formFields ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n");
-  $("honeypot").checked = Boolean(e.honeypotTripped);
-}
-
-async function run() {
-  const btn = $("run");
-  btn.disabled = true; btn.textContent = "Processing…";
-  try {
-    const res = await fetch("/api/process", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        channel: $("channel").value,
-        fromName: $("fromName").value,
-        fromEmail: $("fromEmail").value,
-        fromPhone: $("fromPhone").value,
-        subject: $("subject").value,
-        body: $("body").value,
-        formFields: parseFields($("formFields").value),
-        honeypotTripped: $("honeypot").checked,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? "Request failed");
-    const { lit, notes } = litFrom(data.trace, data.outcome);
-    renderPipe(lit, notes);
-    renderVerdict(data.outcome);
-    renderState(data);
-  } catch (err) {
-    $("verdict").innerHTML = `<div class="verdict a-escalate_to_human">
-      <p class="act">Something broke</p><p class="sum">${esc(err.message)}</p></div>`;
-  } finally {
-    btn.disabled = false; btn.textContent = "Process enquiry";
-  }
-}
-
-async function boot() {
-  renderPipe();
-  const s = await (await fetch("/api/state")).json();
-  fixtures = s.fixtures;
-  $("mode").textContent = s.mode === "live" ? "live models" : "simulated model";
-  $("mode").className = "mono " + s.mode;
-  $("mode").title = s.modeLabel;
-  $("fixtures").innerHTML = fixtures.map((f, i) => `<button class="fx" data-i="${i}">${esc(f.label)}</button>`).join("");
-  $("fixtures").addEventListener("click", (e) => {
-    const b = e.target.closest(".fx");
-    if (b) loadFixture(fixtures[Number(b.dataset.i)]);
+function wireApproval(root) {
+  root.querySelectorAll("[data-approve]").forEach((b) => b.onclick = () => {
+    const approver = root.querySelector("[data-approver]")?.value ?? "";
+    load("/api/approve", { draftId: b.dataset.approve, approver });
   });
-  renderState(s);
-  loadFixture(fixtures[0]);
+  root.querySelectorAll("[data-reject]").forEach((b) => b.onclick = () => {
+    const approver = root.querySelector("[data-approver]")?.value ?? "";
+    load("/api/reject", { draftId: b.dataset.reject, approver, note: "rejected from the inspector" });
+  });
 }
 
-$("run").addEventListener("click", run);
-$("reset").addEventListener("click", async () => {
-  renderState(await (await fetch("/api/reset", { method: "POST" })).json());
-  renderPipe();
-  $("verdict").innerHTML = `<div class="placeholder">Cleared. Load an example or write an enquiry.</div>`;
+function renderIdentity() {
+  const pane = el("pane");
+  pane.innerHTML = `
+    <h2>Identity, duplicates and conflicts</h2>
+    <p class="note">Three different duplicate problems live in this pack, and they need three different answers.</p>
+
+    ${S.batchWarnings.map((w) => `<div class="banner">${esc(w)}</div>`).join("")}
+
+    <h3>Duplicates inside the CRM export itself</h3>
+    ${S.mergeProposals.length ? S.mergeProposals.map((m) => `
+      <div class="card">
+        <div><span class="pill">${esc(m.proposalId)}</span> <span class="pill">${m.crmIds.map(esc).join(" + ")}</span> <span class="pill escalate_to_human">proposed — not applied</span></div>
+        <p class="note" style="margin:9px 0 10px">Matched on <span class="span">${esc(m.reason)}</span>. Survivor proposed: <strong>${esc(m.proposedSurvivor)}</strong> (the more complete row). Nothing was written to the CRM.</p>
+        <dl class="grid">${Object.entries(m.proposedMerge).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+      </div>`).join("") : `<p class="note">None found.</p>`}
+
+    <h3>Items grouped into organisations</h3>
+    ${S.entities.map((e) => `
+      <div class="card">
+        <div><span class="pill">${esc(e.entityId)}</span> <strong>${esc(e.displayName)}</strong></div>
+        <dl class="grid" style="margin-top:9px">
+          <dt>items</dt><dd class="mono">${e.itemIds.map(esc).join(", ")}</dd>
+          <dt>crm rows</dt><dd class="mono">${e.crmIds.length ? e.crmIds.map(esc).join(", ") : "none — not in the CRM"}</dd>
+          <dt>linked by</dt><dd class="span">${e.signals.map(esc).join(", ")}</dd>
+        </dl>
+        ${e.conflicts.map((c) => `
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+            <strong>${esc(c.field)}</strong>
+            ${c.autoResolved ? `<span class="pill file_and_notify">resolved → ${esc(c.resolvedTo)}</span>` : `<span class="pill escalate_to_human">held for a human</span>`}
+            <table style="margin-top:7px"><tbody>${c.values.map((v) => `<tr><td class="mono">${esc(v.fromItem)}</td><td>${esc(v.value)}</td></tr>`).join("")}</tbody></table>
+            <p class="note" style="margin:8px 0 0">${esc(c.basis)}</p>
+          </div>`).join("")}
+      </div>`).join("")}`;
+}
+
+function renderApprovals() {
+  const pane = el("pane");
+  const waiting = S.approvals.filter((d) => d.status === "awaiting_approval");
+  pane.innerHTML = `
+    <h2>Approval queue</h2>
+    <div class="banner good">${S.approvals.length} draft(s) prepared · ${waiting.length} awaiting a named human · <strong>${S.stats.draftsSent} sent</strong>. The sent counter is zero because this build has no outbound transport. It is not a setting.</div>
+    ${S.approvals.map((d) => {
+      const item = S.items.find((i) => i.draftId === d.draftId);
+      return `<div class="card">
+        <div style="margin-bottom:9px">
+          <span class="pill">${esc(d.draftId)}</span> <span class="pill">${esc(d.itemId)}</span>
+          <span class="pill ${d.status === "approved" ? "file_and_notify" : d.status === "rejected" ? "quarantine" : "escalate_to_human"}">${esc(d.status)}</span>
+          <span class="pill">owner ${esc(d.ownerName)}</span> <span class="pill">to ${esc(d.to)}</span>
+        </div>
+        <div class="draft"><strong>${esc(d.subject)}</strong>\n\n${esc(d.body)}</div>
+        ${d.basis.length ? `<ul class="reasons" style="margin-top:11px">${d.basis.map((b) => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
+        ${d.status === "awaiting_approval" ? `
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <input class="name" data-approver placeholder="your name" size="26" />
+            <button class="act primary" data-approve="${esc(d.draftId)}">Approve</button>
+            <button class="act danger" data-reject="${esc(d.draftId)}">Reject</button>
+          </div>` : `<p class="note" style="margin-top:11px">${esc(d.status)} by <strong>${esc(d.decidedBy)}</strong>. Not sent.</p>`}
+      </div>`;
+    }).join("")}`;
+  // Each card carries its own approver box, so wire per card.
+  pane.querySelectorAll(".card").forEach((c) => wireApproval(c));
+}
+
+function renderAudit() {
+  const pane = el("pane");
+  const all = S.items.flatMap((i) => i.trace);
+  pane.innerHTML = `
+    <h2>Audit log</h2>
+    <p class="note">Append-only and hash-chained: each row carries the hash of the one before it, so an edited or deleted row breaks the chain and verification says where. Timestamps come from the sequence number, not the wall clock, so the same input produces a byte-identical log.</p>
+    <div class="banner ${S.auditVerified.ok ? "good" : ""}">${S.auditVerified.ok ? "Chain verified intact across every entry." : "CHAIN BROKEN at #" + S.auditVerified.brokenAtSeq}</div>
+    <div class="card scroll-x"><table><thead><tr><th>#</th><th>item</th><th>stage</th><th>actor</th><th>what happened</th><th>hash</th></tr></thead><tbody>
+      ${all.sort((a, b) => a.seq - b.seq).map((t) => `<tr>
+        <td class="mono">${t.seq}</td><td class="mono">${esc(t.itemId)}</td><td class="mono">${esc(t.stage)}</td>
+        <td class="mono">${esc(t.actor)}</td><td>${esc(t.summary)}</td><td class="span">${esc(t.hash.slice(0, 10))}…</td></tr>`).join("")}
+    </tbody></table></div>`;
+}
+
+function renderData() {
+  const pane = el("pane");
+  pane.innerHTML = `
+    <h2>Source data, as supplied</h2>
+    ${S.ingestIssues.length ? `<h3>Ingest notes</h3>` + S.ingestIssues.map((i) => `<div class="banner">${esc(i)}</div>`).join("") : ""}
+
+    <h3>Staff directory — the only source of ownership</h3>
+    <div class="card"><table><thead><tr><th>name</th><th>role</th><th>owns</th></tr></thead><tbody>
+      ${Object.values(S.staff).map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.role)}</td><td class="note">${esc(s.owns)}</td></tr>`).join("")}
+    </tbody></table></div>
+
+    <h3>CRM export — read-only</h3>
+    <div class="card scroll-x"><table><thead><tr><th>id</th><th>company</th><th>contact</th><th>email</th><th>phone</th><th>location</th><th>stage</th><th>interest</th></tr></thead><tbody>
+      ${S.crm.map((r) => `<tr><td class="mono">${esc(r.id)}</td><td>${esc(r.company)}</td><td>${esc(r.contact)}</td><td class="span">${esc(r.email)}</td><td class="mono">${esc(r.phone || "—")}</td><td>${esc(r.location)}</td><td>${esc(r.stage)}</td><td>${esc(r.interest)}</td></tr>`).join("")}
+    </tbody></table></div>
+
+    <h3>Routing table</h3>
+    <div class="card scroll-x"><table><thead><tr><th>category</th><th>owner</th><th>destination</th><th>reply policy</th><th>why this owner</th></tr></thead><tbody>
+      ${Object.entries(S.routing).map(([k, r]) => `<tr><td>${esc(S.intentLabels[k])}</td><td>${esc(r.owner)}</td><td class="mono">${esc(r.destination)}</td><td class="mono">${esc(r.responsePolicy)}</td><td class="note">${esc(r.justification)}</td></tr>`).join("")}
+    </tbody></table></div>
+
+    <h3>Run statistics</h3>
+    <div class="card"><dl class="grid">
+      ${Object.entries(S.stats).map(([k, v]) => `<dt>${esc(k)}</dt><dd class="mono">${esc(v)}</dd>`).join("")}
+      <dt>crm rows modified</dt><dd class="mono">0 — the export is read-only by design</dd>
+    </dl></div>`;
+}
+
+el("tabs").querySelectorAll("button").forEach((b) => b.onclick = () => {
+  tab = b.dataset.tab;
+  el("tabs").querySelectorAll("button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+  render();
 });
-boot();
+
+load("/api/state");
 </script>
 </body>
 </html>

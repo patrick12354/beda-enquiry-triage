@@ -3,20 +3,28 @@ import { createHash } from "node:crypto";
 /**
  * Append-only, hash-chained audit log.
  *
- * Every stage writes one entry. Each entry carries the hash of the previous
- * one, so a deleted or edited row breaks the chain and `verify()` fails. That
- * matters for two reasons beyond tidiness: candidate PII decisions have to be
- * defensible under Indonesian and Australian privacy law, and when a client
- * says "nobody replied to me", the chain is the answer.
+ * Every stage writes one entry. Each entry carries the hash of the one before
+ * it, so a deleted or edited row breaks the chain and `verify()` says where.
  *
- * The log records the model id, the prompt hash and the cost of every inference
- * -- not the prompt itself, which may contain PII. The raw enquiry lives once,
- * in the encrypted enquiry store, referenced by id.
+ * This is not tidiness. The system makes decisions that cost money — it tells
+ * finance that a $2,640 variance is real, it decides a customer's enquiry was
+ * spam, it declines to answer an engineering question. When someone asks "why
+ * did nobody reply to me", or "who decided this", the chain is the answer, and
+ * an answer that could have been quietly rewritten afterwards is not one.
+ *
+ * The log records what happened and why. It records field NAMES and reason
+ * codes, not the raw text of the item, which may contain personal data; the
+ * item itself lives once, in the item store, referenced by id.
+ *
+ * Timestamps are derived from the sequence number rather than the wall clock,
+ * so the same input produces a byte-identical log. That makes the audit trail
+ * diffable in tests, which is the only way to notice that a change to the gate
+ * quietly altered the reasoning on an item nobody was looking at.
  */
 export interface AuditEntry {
   seq: number;
   at: string;
-  enquiryId: string;
+  itemId: string;
   stage: string;
   /** "system" | "model:<id>" | "user:<email>" -- who caused this. */
   actor: string;
@@ -29,7 +37,7 @@ export interface AuditEntry {
 
 export interface AuditPort {
   append(e: Omit<AuditEntry, "seq" | "at" | "prevHash" | "hash">): Promise<AuditEntry>;
-  forEnquiry(enquiryId: string): Promise<AuditEntry[]>;
+  forItem(itemId: string): Promise<AuditEntry[]>;
   verify(): Promise<{ ok: boolean; brokenAtSeq: number | null }>;
 }
 
@@ -50,8 +58,8 @@ export class InMemoryAudit implements AuditPort {
     return entry;
   }
 
-  async forEnquiry(enquiryId: string): Promise<AuditEntry[]> {
-    return this.entries.filter((e) => e.enquiryId === enquiryId);
+  async forItem(itemId: string): Promise<AuditEntry[]> {
+    return this.entries.filter((e) => e.itemId === itemId);
   }
 
   async verify(): Promise<{ ok: boolean; brokenAtSeq: number | null }> {

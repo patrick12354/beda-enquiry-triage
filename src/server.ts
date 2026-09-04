@@ -1,61 +1,63 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { ALL_FIXTURES } from "./fixtures/enquiries.js";
-import { processEnquiry, type RunDeps } from "./pipeline/run.js";
-import { InMemoryAudit } from "./ports/audit.js";
-import { InMemoryApprovalQueue, InMemoryCrm } from "./ports/crm.js";
-import { HeuristicLlm, describeMode, type LlmMode } from "./ports/heuristic-llm.js";
-import { OpenRouterLlm } from "./ports/llm.js";
 import { MODELS } from "./config/models.js";
-import { RawEnquirySchema } from "./domain/schema.js";
+import { INTENT_LABELS, ROUTING, STAFF } from "./domain/taxonomy.js";
+import { ingest, type IngestResult } from "./ingest/load.js";
+import { runBatch, type BatchResult, type RunDeps } from "./pipeline/run.js";
+import { qualify } from "./pipeline/gate.js";
+import { InMemoryAudit } from "./ports/audit.js";
+import { describeMode, HeuristicLlm, type LlmMode } from "./ports/heuristic-llm.js";
+import { OpenRouterLlm } from "./ports/llm.js";
+import { InMemoryApprovalQueue, InMemoryRecordStore } from "./ports/records.js";
 
 /**
- * Local demo server for the triage pipeline.
+ * Local server for the two surfaces.
  *
- * Deliberately dependency-free -- node:http and nothing else. A demo that needs
- * its own framework is a demo nobody runs.
+ * Dependency-free on purpose — node:http and nothing else. A demo that needs
+ * its own framework is a demo nobody runs, and this one has to be runnable by
+ * someone who has three hours and a laptop.
  *
- * State is in-memory and shared across requests on purpose: submitting the same
- * enquiry twice is how you see deduplication work, and that only reads as real
- * if the CRM remembers the first one.
+ *   /         the story: what was built, and why each decision went the way it did
+ *   /inspect  the tool: every item, its evidence, and the approval queue
+ *
+ * The approval endpoints are the only mutating ones. They require a named
+ * approver and they mark a draft approved. There is no send endpoint, because
+ * there is no sender.
  */
 
 const PORT = Number(process.env.PORT ?? 5173);
 const here = dirname(fileURLToPath(import.meta.url));
-/* Two surfaces, one origin. `/` is the document, `/demo` is the running
-   pipeline, and they share a bar so a reader can cross between them. */
 const siteDir = join(here, "..", "site");
 const webDir = join(here, "..", "web");
 
 const apiKey = process.env.OPENROUTER_API_KEY?.trim();
 const mode: LlmMode = apiKey ? "live" : "simulated";
 
-let crm = new InMemoryCrm();
+let ingested: IngestResult;
+let records = new InMemoryRecordStore();
 let approvals = new InMemoryApprovalQueue();
 let audit = new InMemoryAudit();
-let seen = new Set<string>();
+let result: BatchResult;
 
-function deps(): RunDeps {
-  return {
-    llm: apiKey ? new OpenRouterLlm(apiKey) : new HeuristicLlm(),
-    crm,
-    approvals,
-    audit,
-    seenExternalIds: seen,
-  };
-}
-
-function reset(): void {
-  crm = new InMemoryCrm();
+async function runAll(): Promise<void> {
+  ingested = await ingest();
+  records = new InMemoryRecordStore();
   approvals = new InMemoryApprovalQueue();
   audit = new InMemoryAudit();
-  seen = new Set<string>();
+  const deps: RunDeps = {
+    llm: apiKey ? new OpenRouterLlm(apiKey) : new HeuristicLlm(),
+    crm: ingested.crm,
+    records,
+    approvals,
+    audit,
+  };
+  result = await runBatch(ingested.items, deps);
 }
 
-const json = (res: import("node:http").ServerResponse, code: number, body: unknown) => {
+function json(res: ServerResponse, code: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.writeHead(code, {
     "Content-Type": "application/json; charset=utf-8",
@@ -63,9 +65,9 @@ const json = (res: import("node:http").ServerResponse, code: number, body: unkno
     "Cache-Control": "no-store",
   });
   res.end(payload);
-};
+}
 
-async function readBody(req: import("node:http").IncomingMessage): Promise<any> {
+async function readBody(req: IncomingMessage): Promise<any> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const c of req) {
@@ -73,8 +75,7 @@ async function readBody(req: import("node:http").IncomingMessage): Promise<any> 
     if (size > 256_000) throw new Error("Request body too large");
     chunks.push(c as Buffer);
   }
-  if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
 }
 
 const MIME: Record<string, string> = {
@@ -82,66 +83,110 @@ const MIME: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
+  ".json": "application/json; charset=utf-8",
 };
+
+async function snapshot() {
+  return {
+    mode,
+    modeLabel: describeMode(mode),
+    models: MODELS,
+    staff: STAFF,
+    routing: ROUTING,
+    intentLabels: INTENT_LABELS,
+    crm: ingested.crm,
+    ingestIssues: ingested.issues,
+    batchWarnings: result.batchWarnings,
+    crmDuplicates: result.crmDuplicates,
+    mergeProposals: records.mergeProposals,
+    entities: result.entities,
+    stats: { ...result.stats, draftsSent: 0 },
+    records: records.all(),
+    approvals: approvals.list(),
+    auditVerified: await audit.verify(),
+    items: await Promise.all(
+      result.outcomes.map(async (o) => ({
+        id: o.item.id,
+        seq: o.item.seq,
+        from: o.item.fromEmail,
+        fromName: o.item.fromName,
+        subject: o.item.subject,
+        body: o.item.body,
+        attachments: o.item.attachments,
+        classification: o.classification,
+        extraction: Object.fromEntries(
+          Object.entries(o.extraction).filter(([, v]) => v !== null),
+        ),
+        approximate: o.approximate,
+        droppedFields: o.droppedFields,
+        reconciliations: o.reconciliations,
+        crmMatches: o.crmMatches,
+        conflicts: o.conflicts,
+        decision: o.decision,
+        qualification:
+          o.decision.intent === "sales_enquiry" ? qualify(o.extraction) : null,
+        recordId: o.recordId,
+        draftId: o.draft?.draftId ?? null,
+        injectionFlags: o.injectionFlags,
+        trace: await audit.forItem(o.item.id),
+      })),
+    ),
+  };
+}
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
 
   try {
-    // ---- API ------------------------------------------------------------
     if (url.pathname === "/api/state" && req.method === "GET") {
-      return json(res, 200, {
-        mode,
-        modeLabel: describeMode(mode),
-        models: MODELS,
-        fixtures: Object.entries(ALL_FIXTURES).map(([key, f]) => ({
-          key,
-          label: key
-            .toLowerCase()
-            .replace(/_/g, " ")
-            .replace(/^\w/, (c) => c.toUpperCase()),
-          enquiry: f,
-        })),
-        ...snapshot(),
+      return json(res, 200, await snapshot());
+    }
+
+    if (url.pathname === "/api/rerun" && req.method === "POST") {
+      await runAll();
+      return json(res, 200, await snapshot());
+    }
+
+    // The approval boundary, over HTTP. Note there is no /api/send.
+    if (url.pathname === "/api/approve" && req.method === "POST") {
+      const { draftId, approver, note } = await readBody(req);
+      if (typeof approver !== "string" || approver.trim().length < 2) {
+        return json(res, 400, { error: "An approval must name the person making it." });
+      }
+      const draft = await approvals.approve(String(draftId), approver.trim(), note);
+      await audit.append({
+        itemId: draft.itemId,
+        stage: "approval",
+        actor: `user:${approver.trim()}`,
+        summary: `${draft.draftId} approved for release by ${approver.trim()}. Approval is recorded; this build has no sender, so nothing was transmitted.`,
+        detail: { draftId: draft.draftId, sent: false },
       });
+      return json(res, 200, await snapshot());
     }
 
-    if (url.pathname === "/api/process" && req.method === "POST") {
-      const body = await readBody(req);
-      const enquiry = RawEnquirySchema.parse({
-        externalId: body.externalId || `demo-${Date.now()}`,
-        channel: body.channel ?? "email",
-        receivedAt: new Date().toISOString(),
-        fromName: body.fromName || null,
-        fromEmail: body.fromEmail || null,
-        fromPhone: body.fromPhone || null,
-        subject: body.subject || null,
-        body: body.body ?? "",
-        formFields: body.formFields ?? {},
-        attachments: [],
-        honeypotTripped: Boolean(body.honeypotTripped),
+    if (url.pathname === "/api/reject" && req.method === "POST") {
+      const { draftId, approver, note } = await readBody(req);
+      if (typeof approver !== "string" || approver.trim().length < 2) {
+        return json(res, 400, { error: "A rejection must name the person making it." });
+      }
+      const draft = await approvals.reject(String(draftId), approver.trim(), note);
+      await audit.append({
+        itemId: draft.itemId,
+        stage: "approval",
+        actor: `user:${approver.trim()}`,
+        summary: `${draft.draftId} rejected by ${approver.trim()}${note ? `: ${note}` : ""}.`,
+        detail: { draftId: draft.draftId, sent: false },
       });
-
-      const before = (await audit.forEnquiry(enquiry.externalId)).length;
-      const outcome = await processEnquiry(enquiry, deps());
-      const trace = (await audit.forEnquiry(enquiry.externalId)).slice(before);
-
-      return json(res, 200, { outcome, trace, ...snapshot() });
+      return json(res, 200, await snapshot());
     }
 
-    if (url.pathname === "/api/reset" && req.method === "POST") {
-      reset();
-      return json(res, 200, snapshot());
-    }
-
-    // ---- static ---------------------------------------------------------
+    // ---- static -----------------------------------------------------------
     let path = decodeURIComponent(url.pathname);
     if (path.includes("..")) return json(res, 400, { error: "Bad path" });
 
-    // /demo and /demo/* are the tool; everything else is the document.
-    const onDemo = path === "/demo" || path.startsWith("/demo/");
-    const root = onDemo ? webDir : siteDir;
-    if (onDemo) path = path.slice(5) || "/";
+    const onInspector = path === "/inspect" || path.startsWith("/inspect/");
+    const root = onInspector ? webDir : siteDir;
+    if (onInspector) path = path.slice(8) || "/";
     const file = path === "/" || path === "" ? "index.html" : path.replace(/^\/+/, "");
 
     const ext = file.slice(file.lastIndexOf("."));
@@ -157,29 +202,18 @@ const server = createServer(async (req, res) => {
   }
 });
 
-function snapshot() {
-  return {
-    crm: {
-      contacts: [...crm.contacts.values()],
-      deals: crm.deals.map((d) => ({ id: d.id, title: d.title, stage: d.stage })),
-      notes: crm.notes.length,
-    },
-    approvals: approvals.items,
-    auditLength: 0,
-  };
-}
+await runAll();
 
 server.listen(PORT, () => {
-  const line = "─".repeat(64);
+  const line = "─".repeat(66);
   console.log(`\n${line}`);
-  console.log("  BEDA enquiry triage — local demo");
+  console.log("  BEDA — intake, triage and response");
   console.log(line);
-  console.log(`  Read:   http://localhost:${PORT}`);
-  console.log(`  Try:    http://localhost:${PORT}/demo`);
-  console.log(`  Brain:  ${describeMode(mode)}`);
-  if (mode === "simulated") {
-    console.log("          (set OPENROUTER_API_KEY to run against real DeepSeek)");
-  }
-  console.log(`  Stop:   Ctrl+C, or just close this window`);
+  console.log(`  Story:    http://localhost:${PORT}`);
+  console.log(`  Inspect:  http://localhost:${PORT}/inspect`);
+  console.log(`  Brain:    ${describeMode(mode)}`);
+  if (mode === "simulated") console.log("            (set OPENROUTER_API_KEY to run against a hosted model)");
+  console.log(`  Items:    ${result.stats.items} processed · ${result.stats.draftsQueued} drafts awaiting approval · ${result.stats.draftsSent} sent`);
+  console.log(`  Stop:     Ctrl+C, or close this window`);
   console.log(`${line}\n`);
 });
