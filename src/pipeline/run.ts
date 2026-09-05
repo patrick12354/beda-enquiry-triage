@@ -291,6 +291,8 @@ export async function runBatch(items: WorkItem[], deps: RunDeps): Promise<BatchR
 
     // 8. Effects. Internal staging is allowed; outbound is not.
     let recordId: string | null = null;
+    // Kept so the draft can fingerprint exactly what it was built on.
+    let stagedFields: Record<string, string> = {};
     if (decision.action !== "quarantine" && ROUTING[decision.intent].autoFileRecord) {
       const values = plainValues(kept);
       const provenance: Record<string, string> = {};
@@ -320,6 +322,7 @@ export async function runBatch(items: WorkItem[], deps: RunDeps): Promise<BatchR
         provenance,
       });
       recordId = staged.id;
+      stagedFields = { ...staged.fields };
       await log("record_staged", "system", `staged ${staged.id} → ${decision.destination}${crmRow ? `, linked to ${crmRow.id}` : ", new organisation"}`, {
         applied_to_crm: false,
       });
@@ -350,9 +353,15 @@ export async function runBatch(items: WorkItem[], deps: RunDeps): Promise<BatchR
           context: Object.fromEntries(
             Object.entries(plainValues(kept)).filter(([, v]) => typeof v === "string"),
           ) as Record<string, string>,
+          // What this draft depends on, and a hash of it as it stands right now.
+          // An approval given later is only valid against this same state.
+          recordId,
+          crmId: crmRow?.id ?? null,
+          state: { crmRow: crmRow ?? null, fields: stagedFields },
         });
         await log("draft_queued", "system", `reply drafted and queued for ${decision.ownerName} to approve`, {
           draftId: draft.draftId,
+          state_fingerprint: draft.stateFingerprint.slice(0, 16),
           sent: false,
         });
       } else {

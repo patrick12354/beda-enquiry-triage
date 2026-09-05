@@ -16,8 +16,8 @@ import { INTENT_LABELS } from "./domain/taxonomy.js";
 const { items, crm, issues } = await ingest();
 
 const records = new InMemoryRecordStore();
-const approvals = new InMemoryApprovalQueue();
 const audit = new InMemoryAudit();
+const approvals = new InMemoryApprovalQueue(audit);
 const deps: RunDeps = { llm: new HeuristicLlm(), crm, records, approvals, audit };
 
 const result = await runBatch(items, deps);

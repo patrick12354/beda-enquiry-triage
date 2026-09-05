@@ -121,7 +121,13 @@ const el = (id) => document.getElementById(id);
 async function load(path, body) {
   const res = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
   const data = await res.json();
-  if (!res.ok) { alert(data.error ?? "Request failed"); return; }
+  if (!res.ok) {
+    alert(data.error ?? "Request failed");
+    // A 409 (a stale approval) carries the full state alongside the error. The
+    // queue has moved, so the inspector must show that rather than the screen
+    // the reviewer just acted on.
+    if (!data.items) return;
+  }
   S = data;
   if (!selected) selected = S.items[0]?.id ?? null;
   render();
@@ -269,6 +275,8 @@ function renderDraftCard(i) {
           <button class="act danger" data-reject="${esc(d.draftId)}">Reject</button>
         </div>
         <p class="note" style="margin:10px 0 0">Approving records a named decision. It does not send: this build contains no outbound transport, so the counter in the header stays at zero by construction.</p>`
+        : d.status === "stale" ? `
+        <p class="note" style="margin:12px 0 0"><strong>Approval blocked.</strong> ${esc(d.conflict?.detectedBy ?? "someone")} approved this draft, but the staged record or the linked CRM row changed after it was queued (${esc((d.conflict?.expected ?? "").slice(0, 12))} → ${esc((d.conflict?.actual ?? "").slice(0, 12))}). Nothing was applied. The item is back for fresh review against the new state, and the conflict is in the audit chain.</p>`
         : `<p class="note" style="margin:12px 0 0">${esc(d.status)} by <strong>${esc(d.decidedBy)}</strong>${d.decidedNote ? " — " + esc(d.decidedNote) : ""}. Still not sent; there is nothing to send it with.</p>`}
     </div>`;
 }
@@ -322,9 +330,10 @@ function renderIdentity() {
 function renderApprovals() {
   const pane = el("pane");
   const waiting = S.approvals.filter((d) => d.status === "awaiting_approval");
+  const stale = S.approvals.filter((d) => d.status === "stale");
   pane.innerHTML = `
     <h2>Approval queue</h2>
-    <div class="banner good">${S.approvals.length} draft(s) prepared · ${waiting.length} awaiting a named human · <strong>${S.stats.draftsSent} sent</strong>. The sent counter is zero because this build has no outbound transport. It is not a setting.</div>
+    <div class="banner good">${S.approvals.length} draft(s) prepared · ${waiting.length} awaiting a named human${stale.length ? ` · <strong>${stale.length} blocked as stale</strong>` : ""} · <strong>${S.stats.draftsSent} sent</strong>. The sent counter is zero because this build has no outbound transport. It is not a setting.</div>
     ${S.approvals.map((d) => {
       const item = S.items.find((i) => i.draftId === d.draftId);
       return `<div class="card">
@@ -340,7 +349,10 @@ function renderApprovals() {
             <input class="name" data-approver placeholder="your name" size="26" />
             <button class="act primary" data-approve="${esc(d.draftId)}">Approve</button>
             <button class="act danger" data-reject="${esc(d.draftId)}">Reject</button>
-          </div>` : `<p class="note" style="margin-top:11px">${esc(d.status)} by <strong>${esc(d.decidedBy)}</strong>. Not sent.</p>`}
+          </div>`
+          : d.status === "stale"
+            ? `<p class="note" style="margin-top:11px"><strong>stale</strong> — state changed after queueing; ${esc(d.conflict?.detectedBy ?? "an")} approval was blocked and the item returned for fresh review. Not applied, not sent.</p>`
+            : `<p class="note" style="margin-top:11px">${esc(d.status)} by <strong>${esc(d.decidedBy)}</strong>. Not sent.</p>`}
       </div>`;
     }).join("")}`;
   // Each card carries its own approver box, so wire per card.

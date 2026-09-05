@@ -11,7 +11,12 @@ import { qualify } from "./pipeline/gate.js";
 import { InMemoryAudit } from "./ports/audit.js";
 import { describeMode, HeuristicLlm, type LlmMode } from "./ports/heuristic-llm.js";
 import { OpenRouterLlm } from "./ports/llm.js";
-import { InMemoryApprovalQueue, InMemoryRecordStore } from "./ports/records.js";
+import {
+  currentApprovalState,
+  InMemoryApprovalQueue,
+  InMemoryRecordStore,
+  StaleApprovalError,
+} from "./ports/records.js";
 
 /**
  * Local server for the two surfaces.
@@ -38,15 +43,15 @@ const mode: LlmMode = apiKey ? "live" : "simulated";
 
 let ingested: IngestResult;
 let records = new InMemoryRecordStore();
-let approvals = new InMemoryApprovalQueue();
 let audit = new InMemoryAudit();
+let approvals = new InMemoryApprovalQueue(audit);
 let result: BatchResult;
 
 async function runAll(): Promise<void> {
   ingested = await ingest();
   records = new InMemoryRecordStore();
-  approvals = new InMemoryApprovalQueue();
   audit = new InMemoryAudit();
+  approvals = new InMemoryApprovalQueue(audit);
   const deps: RunDeps = {
     llm: apiKey ? new OpenRouterLlm(apiKey) : new HeuristicLlm(),
     crm: ingested.crm,
@@ -153,14 +158,34 @@ const server = createServer(async (req, res) => {
       if (typeof approver !== "string" || approver.trim().length < 2) {
         return json(res, 400, { error: "An approval must name the person making it." });
       }
-      const draft = await approvals.approve(String(draftId), approver.trim(), note);
-      await audit.append({
-        itemId: draft.itemId,
-        stage: "approval",
-        actor: `user:${approver.trim()}`,
-        summary: `${draft.draftId} approved for release by ${approver.trim()}. Approval is recorded; this build has no sender, so nothing was transmitted.`,
-        detail: { draftId: draft.draftId, sent: false },
-      });
+      const queued = approvals.list().find((d) => d.draftId === String(draftId));
+      if (!queued) return json(res, 404, { error: `No such draft: ${String(draftId)}` });
+
+      // Revalidate against the state as it stands NOW, not as it stood when the
+      // draft was written. An approval that has been sitting in the queue while
+      // the record moved underneath it is not an approval of anything current.
+      try {
+        const draft = await approvals.approve(
+          String(draftId),
+          approver.trim(),
+          currentApprovalState(queued, records, ingested.crm),
+          note,
+        );
+        await audit.append({
+          itemId: draft.itemId,
+          stage: "approval",
+          actor: `user:${approver.trim()}`,
+          summary: `${draft.draftId} approved for release by ${approver.trim()}. Approval is recorded; this build has no sender, so nothing was transmitted.`,
+          detail: { draftId: draft.draftId, sent: false },
+        });
+      } catch (err) {
+        if (err instanceof StaleApprovalError) {
+          // 409, because this is a version conflict and not a bad request. The
+          // audit entry was already written by the queue.
+          return json(res, 409, { error: err.message, staleDraftId: err.draft.draftId, ...(await snapshot()) });
+        }
+        throw err;
+      }
       return json(res, 200, await snapshot());
     }
 

@@ -151,6 +151,50 @@ Four mechanisms, because "don't invent facts" has to be enforced, not requested:
   customer silently binned does not. Quarantine is retained and reversible.
 - **No deletes anywhere.** Corrections supersede; superseded values stay in the
   log.
+- **An approval is only valid against the state it was given on.** See below.
+
+### Approvals expire when the facts move
+
+An approval is a named person saying *"given these facts, this reply is
+correct"* — not standing permission to act on that item forever. A draft can sit
+in the queue while the world moves underneath it, and in this system that is not
+hypothetical: pass 2 amends a staged record when a correction arrives after the
+item it corrects (E010 fixes the phone number E009 was staged with), and E011
+says the CRM sync has been failing, so a linked row can change at any time.
+
+So each draft stores a fingerprint — a SHA-256 of the staged record's fields
+plus the linked CRM row — taken when it enters the queue.
+[`approve()`](src/ports/records.ts) recomputes that fingerprint from the live
+stores and compares:
+
+- **unchanged** → the approval applies, and an `approval_revalidated` entry goes
+  into the hash chain;
+- **changed** → nothing is applied, the draft is marked `stale` with the two
+  hashes and the name of whoever tried, an `approval_blocked_stale` entry is
+  written to the audit chain, and the item is returned for fresh review.
+  Re-queueing it produces a new draft against the new state; the stale one stays
+  in the list as the record of why.
+
+**Where the boundary sits.** The check lives inside the queue, not in its
+callers, and `approve()` takes the current state as an argument rather than
+trusting its own snapshot. A check a caller can forget to perform is a
+convention, not a control. It fails by raising `StaleApprovalError` rather than
+returning a flag, so no caller can mistake a blocked approval for a successful
+one — over HTTP that surfaces as `409`, because it is a version conflict and not
+a bad request.
+
+**The tradeoff, stated plainly.** This is fail-closed and content-addressed, so
+it is deliberately blunt: any change to the record or the CRM row invalidates the
+approval, including a cosmetic one that would not have altered the reply. That
+costs a reviewer a second look they arguably did not need. The alternative —
+fingerprinting only the fields the draft "actually uses" — trades a real safety
+property for convenience, and gets it wrong the first time someone adds a field
+to a template and forgets to add it to the list. Rejection is exempt for the
+same reason in reverse: declining to act on state that has moved is safe either
+way, so only the acting direction is gated.
+
+Covered by [`tests/staleness.test.ts`](tests/staleness.test.ts): state unchanged,
+and state changed.
 
 ---
 

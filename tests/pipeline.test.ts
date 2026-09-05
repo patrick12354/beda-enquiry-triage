@@ -6,7 +6,11 @@ import { prefilter } from "../src/pipeline/prefilter.js";
 import { InMemoryAudit } from "../src/ports/audit.js";
 import { HeuristicLlm } from "../src/ports/heuristic-llm.js";
 import { LlmUnavailableError, type LlmPort } from "../src/ports/llm.js";
-import { InMemoryApprovalQueue, InMemoryRecordStore } from "../src/ports/records.js";
+import {
+  currentApprovalState,
+  InMemoryApprovalQueue,
+  InMemoryRecordStore,
+} from "../src/ports/records.js";
 
 /**
  * End to end, over the supplied pack. These assertions are the specification:
@@ -16,14 +20,15 @@ import { InMemoryApprovalQueue, InMemoryRecordStore } from "../src/ports/records
 async function run(items?: WorkItem[], llm: LlmPort = new HeuristicLlm()) {
   const { items: packItems, crm } = await ingest();
   const records = new InMemoryRecordStore();
-  const approvals = new InMemoryApprovalQueue();
   const audit = new InMemoryAudit();
+  const approvals = new InMemoryApprovalQueue(audit);
   const deps: RunDeps = { llm, crm, records, approvals, audit };
   const result = await runBatch(items ?? packItems, deps);
-  return { result, records, approvals, audit };
+  return { result, records, approvals, audit, crm };
 }
 
 let R: BatchResult;
+let crmRows: Awaited<ReturnType<typeof run>>["crm"];
 let store: InMemoryRecordStore;
 let queue: InMemoryApprovalQueue;
 let log: InMemoryAudit;
@@ -32,6 +37,7 @@ beforeAll(async () => {
   const out = await run();
   R = out.result;
   store = out.records;
+  crmRows = out.crm;
   queue = out.approvals;
   log = out.audit;
 });
@@ -157,16 +163,19 @@ describe("the approval boundary", () => {
   });
 
   it("refuses an approval that names nobody", async () => {
-    const id = queue.list()[0]!.draftId;
-    await expect(queue.approve(id, "  ")).rejects.toThrow(/named human/);
+    const draft = queue.list()[0]!;
+    await expect(
+      queue.approve(draft.draftId, "  ", currentApprovalState(draft, store, crmRows)),
+    ).rejects.toThrow(/named human/);
   });
 
   it("records who approved, and still does not send", async () => {
-    const id = queue.list()[0]!.draftId;
-    const d = await queue.approve(id, "Ties Rahardjo");
+    const draft = queue.list()[0]!;
+    const state = currentApprovalState(draft, store, crmRows);
+    const d = await queue.approve(draft.draftId, "Ties Rahardjo", state);
     expect(d.status).toBe("approved");
     expect(d.decidedBy).toBe("Ties Rahardjo");
-    await expect(queue.approve(id, "Matt Cooper")).rejects.toThrow(/already approved/);
+    await expect(queue.approve(draft.draftId, "Matt Cooper", state)).rejects.toThrow(/already approved/);
   });
 
   it("writes nothing to the supplied CRM", () => {
